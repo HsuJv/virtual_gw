@@ -48,11 +48,6 @@ pub fn init_from_file(filename: &str) -> Result<(), Box<dyn std::error::Error>> 
     let mut conf = Config::default();
     conf.merge(File::with_name(filename))?;
 
-    debug!("{:?}", conf.get_bool("server")?);
-    debug!("{:?}", conf.get_str("server_ip")?);
-    debug!("{:?}", conf.get_str("client_ips")?);
-    debug!("{:?}", conf.get_array("client_routes")?);
-
     config_check(&conf);
 
     let priv_config = Box::new(PrivConfig { conf });

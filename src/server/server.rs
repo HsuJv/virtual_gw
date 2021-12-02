@@ -1,3 +1,4 @@
+use crate::common::action;
 use crate::tunnel::create_tun;
 use crate::AsyncReturn;
 use crate::{config, server::clientip};
@@ -7,12 +8,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::{io::BufReader, net::TcpStream};
 
-const CONNCET: u8 = 1;
-
 async fn handle_client_connect(mut s: BufReader<TcpStream>) {
     let action = s.read_u8().await.unwrap();
     match action {
-        CONNCET => {
+        action::CONNCET => {
             info!("Connection start");
             let len = s.read_u16().await.unwrap();
             let mut buf = Vec::with_capacity(len as usize);
@@ -30,7 +29,7 @@ async fn handle_client_connect(mut s: BufReader<TcpStream>) {
             .to_string();
             debug!("Send {:?}", ret);
             let mut to_write = vec![
-                CONNCET,
+                action::CONNCET,
                 ((ret.len() & 0xff00) >> 16).try_into().unwrap(),
                 (ret.len() & 0xff).try_into().unwrap(),
             ];

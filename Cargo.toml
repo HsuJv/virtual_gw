@@ -7,3 +7,36 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# tokios
+tokio = {version="1.14.0", features=["full"]}
+tokio-util = { version = "0.6", features = ["codec"], optional = true }
+
+# network
+bytes = { version = "1", optional = true }
+byteorder = { version = "1", optional = true }
+futures-core = { version = "0.3", optional = true }
+packet = "0.1"
+futures = "0.3"
+
+# tun/tap
+tun = { version = "0.5", features = ["async"] }
+
+# json
+serde_json = "1"
+
+# config
+config = "0.11"
+paste = "1"
+
+# logs
+log = "0.4.14"
+env_logger = "0.9.0"
+
+#  arg
+clap = "2.34.0"
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+opt-level = 3

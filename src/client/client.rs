@@ -4,6 +4,7 @@ use crate::{
 };
 use crate::{tunnel::create_tun, AsyncReturn};
 use log::*;
+use native_tls::Identity;
 use std::process::Command;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufReader},
@@ -33,16 +34,18 @@ async fn start_connect(s: &mut BufReader<TlsStream<TcpStream>>) -> AsyncReturn<s
 }
 
 pub async fn start() -> AsyncReturn<()> {
-    info!("Client started");
     let server_addr = config::get_server_ip();
-
     let connection = TcpStream::connect(&server_addr).await?;
-    // let connector = .danger_accept_invalid_certs(true);
+    let der = include_bytes!("identity.p12");
+    let cert = Identity::from_pkcs12(der, "mypass")?;
     let cx = native_tls::TlsConnector::builder()
         .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_hostnames(true)
+        .identity(cert)
         .build()?;
     let cx = tokio_native_tls::TlsConnector::from(cx);
     let connection = cx.connect(&server_addr, connection).await?;
+    info!("Client started");
 
     let mut stream = BufReader::new(connection);
     let param = start_connect(&mut stream).await?;

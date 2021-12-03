@@ -5,14 +5,19 @@ use crate::tunnel::create_tun;
 use crate::AsyncReturn;
 use crate::{config, server::clientip};
 use log::*;
+use native_tls::Identity;
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::{io::BufReader, net::TcpStream};
+use tokio_native_tls::TlsStream;
 
 use super::clientip::release_client_ip;
 
-async fn handle_client_connect(tun_addr: String, mut s: BufReader<TcpStream>) -> AsyncReturn<()> {
+async fn handle_client_connect(
+    tun_addr: String,
+    mut s: BufReader<TlsStream<TcpStream>>,
+) -> AsyncReturn<()> {
     let tun = create_tun(&tun_addr).await.unwrap();
     let action = s.read_u8().await.unwrap();
     let mut client_ip = String::new();
@@ -70,14 +75,20 @@ pub async fn start() -> AsyncReturn<()> {
     // let tun = create_tun(&tun_addr).await?;
     let listener = TcpListener::bind(&net_addr).await?;
     info!("Server started at {}", net_addr);
-
+    // Create the TLS acceptor.
+    let der = include_bytes!("identity.p12");
+    let cert = Identity::from_pkcs12(der, "mypass")?;
+    let tls_acceptor =
+        tokio_native_tls::TlsAcceptor::from(native_tls::TlsAcceptor::builder(cert).build()?);
     loop {
         let (socket, client) = listener.accept().await?;
         let tun_addr = tun_addr.clone();
+        let tls_acceptor = tls_acceptor.clone();
         info!("Accept client {}", client);
 
         tokio::spawn(async move {
-            let client_stream = BufReader::new(socket);
+            let tls_stream = tls_acceptor.accept(socket).await.expect("accept error");
+            let client_stream = BufReader::new(tls_stream);
             let _ = handle_client_connect(tun_addr, client_stream).await;
         });
     }

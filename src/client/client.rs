@@ -9,8 +9,9 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufReader},
     net::TcpStream,
 };
+use tokio_native_tls::TlsStream;
 
-async fn start_connect(s: &mut BufReader<TcpStream>) -> AsyncReturn<serde_json::Value> {
+async fn start_connect(s: &mut BufReader<TlsStream<TcpStream>>) -> AsyncReturn<serde_json::Value> {
     let buf: [u8; 5] = [action::CONNCET, 0, 2, 3, 4];
     let _ = s.write(&buf).await;
     let action = s.read_u8().await?;
@@ -35,7 +36,14 @@ pub async fn start() -> AsyncReturn<()> {
     info!("Client started");
     let server_addr = config::get_server_ip();
 
-    let connection = TcpStream::connect(server_addr).await?;
+    let connection = TcpStream::connect(&server_addr).await?;
+    // let connector = .danger_accept_invalid_certs(true);
+    let cx = native_tls::TlsConnector::builder()
+        .danger_accept_invalid_certs(true)
+        .build()?;
+    let cx = tokio_native_tls::TlsConnector::from(cx);
+    let connection = cx.connect(&server_addr, connection).await?;
+
     let mut stream = BufReader::new(connection);
     let param = start_connect(&mut stream).await?;
     let ip = param.get("ip").unwrap().as_str().unwrap();

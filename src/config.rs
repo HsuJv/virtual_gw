@@ -1,5 +1,5 @@
 use config::{Config, ConfigError, File, Value};
-use log::*;
+
 use paste::paste;
 use std::collections::HashMap;
 

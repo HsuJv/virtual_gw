@@ -4,15 +4,15 @@ use crate::{
 };
 use crate::{tunnel::create_tun, AsyncReturn};
 use log::*;
-use native_tls::Identity;
-use std::process::Command;
+use openssl::ssl::{SslConnector, SslFiletype, SslMethod, SslVerifyMode};
+use std::{pin::Pin, process::Command};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufReader},
     net::TcpStream,
 };
-use tokio_native_tls::TlsStream;
+use tokio_openssl::SslStream;
 
-async fn start_connect(s: &mut BufReader<TlsStream<TcpStream>>) -> AsyncReturn<serde_json::Value> {
+async fn start_connect(s: &mut BufReader<SslStream<TcpStream>>) -> AsyncReturn<serde_json::Value> {
     let buf: [u8; 5] = [action::CONNCET, 0, 2, 3, 4];
     let _ = s.write(&buf).await;
     let action = s.read_u8().await?;
@@ -36,15 +36,25 @@ async fn start_connect(s: &mut BufReader<TlsStream<TcpStream>>) -> AsyncReturn<s
 pub async fn start() -> AsyncReturn<()> {
     let server_addr = config::get_server_ip();
     let connection = TcpStream::connect(&server_addr).await?;
-    let der = include_bytes!("identity.p12");
-    let cert = Identity::from_pkcs12(der, "mypass")?;
-    let cx = native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(true)
-        .danger_accept_invalid_hostnames(true)
-        .identity(cert)
-        .build()?;
-    let cx = tokio_native_tls::TlsConnector::from(cx);
-    let connection = cx.connect(&server_addr, connection).await?;
+    let mut connector = SslConnector::builder(SslMethod::tls_client()).unwrap();
+    let ssl = {
+        connector.set_verify_callback(SslVerifyMode::PEER, |_, _| true);
+        connector
+            .set_private_key_file(config::get_key_file(), SslFiletype::PEM)
+            .unwrap();
+        connector
+            .set_certificate_file(config::get_cert_file(), SslFiletype::PEM)
+            .unwrap();
+        connector.set_ca_file(config::get_ca_file()).unwrap();
+        connector
+            .build()
+            .configure()
+            .unwrap()
+            .into_ssl(&server_addr)
+            .unwrap()
+    };
+    let mut connection = SslStream::new(ssl, connection).unwrap();
+    Pin::new(&mut connection).connect().await.unwrap();
     info!("Client started");
 
     let mut stream = BufReader::new(connection);
@@ -52,7 +62,7 @@ pub async fn start() -> AsyncReturn<()> {
     let ip = param.get("ip").unwrap().as_str().unwrap();
     let routes = param.get("routes").unwrap().as_array().unwrap();
 
-    let tun = create_tun(&ip).await?;
+    let tun = create_tun(ip).await?;
 
     for route in routes {
         let route = route.as_str().unwrap();

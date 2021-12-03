@@ -1,22 +1,22 @@
-use std::process::Command;
+use std::{pin::Pin, process::Command};
 
 use crate::common::{self, action};
 use crate::tunnel::create_tun;
 use crate::AsyncReturn;
 use crate::{config, server::clientip};
 use log::*;
-use native_tls::Identity;
+use openssl::ssl::{Ssl, SslAcceptor, SslFiletype, SslMethod, SslVerifyMode};
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::{io::BufReader, net::TcpStream};
-use tokio_native_tls::TlsStream;
+use tokio_openssl::SslStream;
 
 use super::clientip::release_client_ip;
 
 async fn handle_client_connect(
     tun_addr: String,
-    mut s: BufReader<TlsStream<TcpStream>>,
+    mut s: BufReader<SslStream<TcpStream>>,
 ) -> AsyncReturn<()> {
     let tun = create_tun(&tun_addr).await.unwrap();
     let action = s.read_u8().await.unwrap();
@@ -76,10 +76,19 @@ pub async fn start() -> AsyncReturn<()> {
     let listener = TcpListener::bind(&net_addr).await?;
     info!("Server started at {}", net_addr);
     // Create the TLS acceptor.
-    let der = include_bytes!("identity.p12");
-    let cert = Identity::from_pkcs12(der, "mypass")?;
-    let tls_acceptor =
-        tokio_native_tls::TlsAcceptor::from(native_tls::TlsAcceptor::builder(cert).build()?);
+    let mut tls_acceptor = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls_server()).unwrap();
+    let tls_acceptor = {
+        tls_acceptor.set_verify_callback(SslVerifyMode::PEER, |_, _| true);
+        tls_acceptor
+            .set_private_key_file(config::get_key_file(), SslFiletype::PEM)
+            .unwrap();
+        tls_acceptor
+            .set_certificate_file(config::get_cert_file(), SslFiletype::PEM)
+            .unwrap();
+        tls_acceptor.set_ca_file(config::get_ca_file()).unwrap();
+        tls_acceptor.build()
+    };
+
     loop {
         let (socket, client) = listener.accept().await?;
         let tun_addr = tun_addr.clone();
@@ -87,7 +96,9 @@ pub async fn start() -> AsyncReturn<()> {
         info!("Accept client {}", client);
 
         tokio::spawn(async move {
-            let tls_stream = tls_acceptor.accept(socket).await.expect("accept error");
+            let ssl = Ssl::new(tls_acceptor.context()).unwrap();
+            let mut tls_stream = SslStream::new(ssl, socket).unwrap();
+            Pin::new(&mut tls_stream).accept().await.unwrap();
             let client_stream = BufReader::new(tls_stream);
             let _ = handle_client_connect(tun_addr, client_stream).await;
         });

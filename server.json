@@ -6,5 +6,8 @@
     "client_routes": [
         "172.25.20.0/24",
         "175.55.5.0/24"
-    ]
+    ],
+    "key_file": "/root/virtual_gw/src/cert/server-key.pem",
+    "cert_file": "/root/virtual_gw/src/cert/server.crt",
+    "ca_file": "/root/virtual_gw/src/cert/ca.crt"
 }

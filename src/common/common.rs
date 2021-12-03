@@ -4,11 +4,11 @@ use log::*;
 use tokio::io::AsyncWriteExt;
 use tokio::io::{AsyncReadExt, BufReader};
 use tokio::net::TcpStream;
-use tokio_native_tls::TlsStream;
+use tokio_openssl::SslStream;
 use tokio_tun::Tun;
 // use tun::{AsyncDevice, TunPacket};
 
-pub async fn main_loop(tun: Tun, tunnel: BufReader<TlsStream<TcpStream>>) -> AsyncReturn<()> {
+pub async fn main_loop(tun: Tun, tunnel: BufReader<SslStream<TcpStream>>) -> AsyncReturn<()> {
     // let mut tun = tun.into_framed();
     let tun = BufReader::new(tun);
     let mut tunnel_buf = [0u8; 1480];

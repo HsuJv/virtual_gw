@@ -1,10 +1,10 @@
-use crate::{common::action, config};
+use crate::{
+    common::{self, action},
+    config,
+};
 use crate::{tunnel::create_tun, AsyncReturn};
-use std::process::Command;
-
-use futures::TryFutureExt;
 use log::*;
-use serde_json::json;
+use std::process::Command;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufReader},
     net::TcpStream,
@@ -41,11 +41,11 @@ pub async fn start() -> AsyncReturn<()> {
     let ip = param.get("ip").unwrap().as_str().unwrap();
     let routes = param.get("routes").unwrap().as_array().unwrap();
 
-    let _tun = create_tun(&ip).await?;
+    let tun = create_tun(&ip).await?;
 
     for route in routes {
         let route = route.as_str().unwrap();
-        println!("route add {} gw {}", route, ip);
+        info!("route add {} gw {}", route, ip);
         let _ = Command::new("route")
             .arg("add")
             .arg("-net")
@@ -55,5 +55,5 @@ pub async fn start() -> AsyncReturn<()> {
             .output()
             .expect("failed to add routes");
     }
-    loop {}
+    common::main_loop(tun, stream).await
 }

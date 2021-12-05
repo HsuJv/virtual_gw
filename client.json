@@ -1,6 +1,6 @@
 {
     "server": false,
-    "server_ip": "x.x.x.x:443",
+    "server_ip": "127.0.0.1:443",
     "key_file": "/root/virtual_gw/src/cert/client-key.pem",
     "cert_file": "/root/virtual_gw/src/cert/client.crt",
     "ca_file": "/root/virtual_gw/src/cert/ca.crt"

@@ -11,33 +11,66 @@ use tokio::{
     net::TcpStream,
 };
 use tokio_openssl::SslStream;
+use tun::AsyncDevice;
 
-async fn start_connect(s: &mut BufReader<SslStream<TcpStream>>) -> AsyncReturn<serde_json::Value> {
-    let buf: [u8; 5] = [action::CONNCET, 0, 2, 3, 4];
-    let _ = s.write(&buf).await;
-    let action = s.read_u8().await?;
-    match action {
-        action::CONNCET => {
-            let len = s.read_u16().await?;
-            let mut json_data: Vec<u8> = Vec::with_capacity(len as usize);
+async fn client_config(param: serde_json::Value) -> AsyncReturn<AsyncDevice> {
+    let ip = param.get("ip").unwrap().as_str().unwrap();
+    let routes = param.get("routes").unwrap().as_array().unwrap();
 
-            for _ in 0..len {
-                json_data.push(s.read_u8().await?);
-            }
+    let tun = create_tun(ip).await?;
 
-            let json_str = String::from_utf8(json_data).unwrap();
-            debug!("Get Response {}", json_str);
-            return Ok(serde_json::from_str(json_str.as_str()).unwrap());
-        }
-        _ => unimplemented!(),
+    for route in routes {
+        let route = route.as_str().unwrap();
+        info!("route add {} gw {}", route, ip);
+        let _ = Command::new("route")
+            .arg("add")
+            .arg("-net")
+            .arg(route)
+            .arg("gw")
+            .arg(ip)
+            .output()
+            .expect("failed to add routes");
     }
+
+    Ok(tun)
+}
+
+async fn start_connect(s: &mut BufReader<SslStream<TcpStream>>) -> AsyncReturn<AsyncDevice> {
+    let _ = s.write(&action::CONFIG_BUF).await;
+    let mut tun = None;
+    loop {
+        let action = s.read_u8().await?;
+        match action {
+            action::CONFIG => {
+                let len = s.read_u16().await?;
+                let mut json_data: Vec<u8> = Vec::with_capacity(len as usize);
+
+                for _ in 0..len {
+                    json_data.push(s.read_u8().await?);
+                }
+
+                let json_str = String::from_utf8(json_data).unwrap();
+                debug!("Get Config {}", json_str);
+                tun.replace(client_config(serde_json::from_str(&json_str).unwrap()).await?);
+                s.write(&action::CONNECT_BUF).await?;
+            }
+            action::CONNECT => {
+                let _len = s.read_u16().await?;
+                let resp_magic = s.read_u32().await?;
+                assert!(resp_magic == action::CONNECT_MAGIC);
+                break;
+            }
+            _ => unimplemented!(),
+        }
+    }
+    Ok(tun.unwrap())
 }
 
 pub async fn start() -> AsyncReturn<()> {
     let server_addr = config::get_server_ip();
     let connection = TcpStream::connect(&server_addr).await?;
-    let mut connector = SslConnector::builder(SslMethod::tls_client()).unwrap();
     let ssl = {
+        let mut connector = SslConnector::builder(SslMethod::tls_client()).unwrap();
         connector.set_verify_callback(SslVerifyMode::PEER, |_, _| true);
         connector
             .set_private_key_file(config::get_key_file(), SslFiletype::PEM)
@@ -58,23 +91,6 @@ pub async fn start() -> AsyncReturn<()> {
     info!("Client started");
 
     let mut stream = BufReader::new(connection);
-    let param = start_connect(&mut stream).await?;
-    let ip = param.get("ip").unwrap().as_str().unwrap();
-    let routes = param.get("routes").unwrap().as_array().unwrap();
-
-    let tun = create_tun(ip).await?;
-
-    for route in routes {
-        let route = route.as_str().unwrap();
-        info!("route add {} gw {}", route, ip);
-        let _ = Command::new("route")
-            .arg("add")
-            .arg("-net")
-            .arg(route)
-            .arg("gw")
-            .arg(ip)
-            .output()
-            .expect("failed to add routes");
-    }
+    let tun = start_connect(&mut stream).await?;
     common::main_loop(tun, stream).await
 }

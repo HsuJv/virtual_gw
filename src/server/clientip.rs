@@ -44,7 +44,7 @@ pub fn init() {
     }
 }
 
-pub fn get_new_client_ip() -> Option<String> {
+pub fn generate_client_ip() -> Option<String> {
     unsafe { IP_POOL.unwrap().lock().unwrap().pop() }
 }
 

@@ -98,7 +98,7 @@ macro_rules! impl_getter {
 
 impl_getter!(String, listen_ip, "0.0.0.0:443".to_string());
 impl_getter!(String, server_ip, "173.75.2.1".to_string());
-impl_getter!(String, client_ips, "".to_string());
+impl_getter!(String, client_ip, "".to_string());
 impl_getter!(Vec<String>, client_routes, vec![]);
 impl_getter!(String, ca_file, "ca.cer".to_string());
 impl_getter!(String, key_file, "key.pem".to_string());

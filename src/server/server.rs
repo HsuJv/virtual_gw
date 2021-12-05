@@ -1,9 +1,12 @@
 use std::{pin::Pin, process::Command};
 
-use crate::common::{self, action};
+use crate::config;
 use crate::tunnel::create_tun;
 use crate::AsyncReturn;
-use crate::{config, server::clientip};
+use crate::{
+    common::{self, action},
+    server::ippool::IpPool,
+};
 use log::*;
 use openssl::ssl::{Ssl, SslAcceptor, SslFiletype, SslMethod, SslVerifyMode};
 use serde_json::json;
@@ -12,16 +15,14 @@ use tokio::net::TcpListener;
 use tokio::{io::BufReader, net::TcpStream};
 use tokio_openssl::SslStream;
 
-use super::clientip::release_client_ip;
-
-async fn server_config(client_ip: &str, tun_addr: &str) -> AsyncReturn<Vec<u8>> {
-    info!("route add {} gw {}", client_ip, tun_addr);
+async fn server_config(client_ip: &str, server_ip: &str) -> AsyncReturn<Vec<u8>> {
+    info!("route add {} gw {}", client_ip, server_ip);
     let _ = Command::new("route")
         .arg("add")
         .arg("-host")
         .arg(&client_ip)
         .arg("gw")
-        .arg(&tun_addr)
+        .arg(&server_ip)
         .output()
         .expect("failed to add routes");
 
@@ -41,11 +42,13 @@ async fn server_config(client_ip: &str, tun_addr: &str) -> AsyncReturn<Vec<u8>> 
 }
 
 async fn handle_client_connect(
-    tun_addr: String,
+    cips: IpPool,
+    sips: IpPool,
     mut ssl: BufReader<SslStream<TcpStream>>,
 ) -> AsyncReturn<()> {
-    let tun = create_tun(&tun_addr).await.unwrap();
-    let mut client_ip = String::new();
+    let client_ip = cips.get_ip().await?;
+    let server_ip = sips.get_ip().await?;
+    let tun = create_tun(&server_ip).await.unwrap();
     loop {
         let action = ssl.read_u8().await.unwrap();
         match action {
@@ -62,8 +65,7 @@ async fn handle_client_connect(
                     return AsyncReturn::Err("Invalid config magic".into());
                 }
 
-                client_ip = clientip::generate_client_ip().unwrap();
-                let client_param = server_config(&client_ip, &tun_addr).await?;
+                let client_param = server_config(&client_ip, &server_ip).await?;
                 let _ = ssl.write(&client_param).await;
             }
             action::CONNECT => {
@@ -84,27 +86,32 @@ async fn handle_client_connect(
             _ => unimplemented!(),
         }
     }
-    if client_ip.is_empty() {
-        error!("Invalid client ip");
-        return AsyncReturn::Err("Client ip is empty".into());
+    if sips.is_host_mode() {
+        unimplemented!();
+    } else {
+        match common::main_loop(tun, ssl).await {
+            Err(e) => info!("Close connection {}", e),
+            _ => panic!(),
+        };
+        cips.free_ip(&client_ip).await?;
+        sips.free_ip(&server_ip).await?;
     }
-    match common::main_loop(tun, ssl).await {
-        Err(e) => info!("Close connection {}", e),
-        _ => panic!(),
-    };
-    info!("Release client ip {}", client_ip);
-    release_client_ip(&client_ip);
     Ok(())
 }
 
 pub async fn start() -> AsyncReturn<()> {
-    clientip::init();
+    let server_ips = IpPool::new("Server_ips", &config::get_server_ip());
+    let client_ips = IpPool::new("Client_ips", &config::get_client_ip());
 
-    let net_addr = config::get_listen_ip();
-    let tun_addr = config::get_server_ip();
-    // let tun = create_tun(&tun_addr).await?;
-    let listener = TcpListener::bind(&net_addr).await?;
-    info!("Server started at {}", net_addr);
+    let listen_addr = config::get_listen_ip();
+    let listener = TcpListener::bind(&listen_addr).await?;
+    info!("Server started at {} with {} mode", listen_addr, {
+        if server_ips.is_host_mode() {
+            "single tun"
+        } else {
+            "multiple tun"
+        }
+    });
     // Create the TLS acceptor.
     let tls_acceptor = {
         let mut tls_acceptor =
@@ -123,16 +130,17 @@ pub async fn start() -> AsyncReturn<()> {
 
     loop {
         let (socket, client) = listener.accept().await?;
-        let tun_addr = tun_addr.clone();
         let tls_acceptor = tls_acceptor.clone();
         info!("Accept client {}", client);
+        let client_ips = client_ips.clone();
+        let server_ips = server_ips.clone();
 
         tokio::spawn(async move {
             let ssl = Ssl::new(tls_acceptor.context()).unwrap();
             let mut tls_stream = SslStream::new(ssl, socket).unwrap();
             Pin::new(&mut tls_stream).accept().await.unwrap();
             let client_stream = BufReader::new(tls_stream);
-            let _ = handle_client_connect(tun_addr, client_stream).await;
+            let _ = handle_client_connect(client_ips, server_ips, client_stream).await;
         });
     }
 }

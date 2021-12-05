@@ -1,6 +1,6 @@
 {
     "server": true,
-    "listen_ip": "0.0.0.0:4433",
+    "listen_ip": "0.0.0.0:443",
     "server_ip": "173.75.2.1",
     "client_ips": "172.25.20.0/24",
     "client_routes": [

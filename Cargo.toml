@@ -10,7 +10,7 @@ edition = "2021"
 # tokios
 tokio = {version="1.14.0", features=["full"]}
 tokio-util = { version = "0.6", features = ["codec"], optional = true }
-tokio-tun = "0.4.0"
+# tokio-tun = "0.4.0"
 tokio-openssl = "0.6.3"
 # tokio-native-tls = "0.3.0"
 # tokio-rustls = "0.23.1"
@@ -26,7 +26,7 @@ openssl = { version = "0.10", features = ["vendored"] }
 # native-tls = "0.2.8"
 
 # tun/tap
-# tun = { git = "https://github.com/meh/rust-tun.git", features = ["async"], branch="master" }
+tun = { git = "https://github.com/0e4ef622/rust-tun.git", features = ["async"], branch="fix_not_sock" }
 
 # json
 serde_json = "1"

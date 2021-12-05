@@ -90,8 +90,14 @@ async fn handle_client_connect(
         unimplemented!();
     } else {
         match common::main_loop(tun, ssl).await {
-            Err(e) => info!("Close connection {}", e),
-            _ => panic!(),
+            Err(e) => warn!(
+                "Unexpected connection shutdown {}, client_ip {}, server_ip {}",
+                e, client_ip, server_ip
+            ),
+            _ => info!(
+                "Close connection, client_ip {}, server_ip {}",
+                client_ip, server_ip
+            ),
         };
         cips.free_ip(&client_ip).await?;
         sips.free_ip(&server_ip).await?;

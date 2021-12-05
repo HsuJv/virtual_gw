@@ -53,7 +53,7 @@ pub async fn main_loop(tun: AsyncDevice, ssl: BufReader<SslStream<TcpStream>>) -
                     // tun_writer.write_all(&ssl_buf[0..n]).await.unwrap();
                     tun.send(TunPacket::new(ssl_buf[0..n].to_vec())).await.unwrap();
                 } else {
-                    // debug!("{}", n);
+                    return Ok(());
                 }
             },
         }

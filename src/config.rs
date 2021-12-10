@@ -1,7 +1,7 @@
 use config::{Config, ConfigError, File, Value};
 
 use paste::paste;
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 struct PrivConfig {
     conf: Config,

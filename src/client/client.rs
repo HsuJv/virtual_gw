@@ -71,7 +71,6 @@ pub async fn start() -> AsyncReturn<()> {
     let connection = TcpStream::connect(&server_addr).await?;
     let ssl = {
         let mut connector = SslConnector::builder(SslMethod::tls_client()).unwrap();
-        connector.set_verify_callback(SslVerifyMode::PEER, |_, _| true);
         connector
             .set_private_key_file(config::get_key_file(), SslFiletype::PEM)
             .unwrap();
@@ -79,10 +78,13 @@ pub async fn start() -> AsyncReturn<()> {
             .set_certificate_file(config::get_cert_file(), SslFiletype::PEM)
             .unwrap();
         connector.set_ca_file(config::get_ca_file()).unwrap();
+        connector.set_verify(SslVerifyMode::PEER);
+
         connector
             .build()
             .configure()
             .unwrap()
+            .verify_hostname(false)
             .into_ssl(&server_addr)
             .unwrap()
     };

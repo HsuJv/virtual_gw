@@ -43,14 +43,14 @@ pub async fn main_loop(tun: AsyncDevice, ssl: BufReader<SslStream<TcpStream>>) -
                 //     }
                 // }
                 if let Ok(packet) = res.unwrap() {
-                    debug!("Write {:02x?}", packet.get_bytes());
+                    debug!("Write {:02x?}", packet.get_bytes().len());
                     ssl_writer.write_all(packet.get_bytes()).await.unwrap();
                 }
             },
             res  = ssl_active => {
                 let n = res.unwrap();
                 if 0 != n {
-                    debug!("Recv {:02x?}", &ssl_buf[..n]);
+                    debug!("Recv {:02x?}", &ssl_buf[..n].len());
                     // tun_writer.write_all(&ssl_buf[0..n]).await.unwrap();
                     tun.send(TunPacket::new(ssl_buf[0..n].to_vec())).await.unwrap();
                 } else {

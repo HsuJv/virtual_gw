@@ -123,7 +123,6 @@ pub async fn start() -> AsyncReturn<()> {
         let mut tls_acceptor =
             SslAcceptor::mozilla_intermediate_v5(SslMethod::tls_server()).unwrap();
 
-        tls_acceptor.set_verify_callback(SslVerifyMode::PEER, |_, _| true);
         tls_acceptor
             .set_private_key_file(config::get_key_file(), SslFiletype::PEM)
             .unwrap();
@@ -131,6 +130,7 @@ pub async fn start() -> AsyncReturn<()> {
             .set_certificate_file(config::get_cert_file(), SslFiletype::PEM)
             .unwrap();
         tls_acceptor.set_ca_file(config::get_ca_file()).unwrap();
+        tls_acceptor.set_verify(SslVerifyMode::PEER);
         tls_acceptor.build()
     };
 

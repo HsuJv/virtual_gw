@@ -23,7 +23,6 @@ packet = "0.1"
 futures = "0.3"
 openssl-sys = "0.9"
 openssl = { version = "0.10", features = ["vendored"] }
-# native-tls = "0.2.8"
 
 # tun/tap
 tun = { git = "https://github.com/0e4ef622/rust-tun.git", features = ["async"], branch="fix_not_sock" }

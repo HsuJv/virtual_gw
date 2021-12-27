@@ -2,7 +2,6 @@ use clap::clap_app;
 use env_logger::Env;
 
 mod client;
-mod common;
 mod config;
 mod server;
 mod tunnel;

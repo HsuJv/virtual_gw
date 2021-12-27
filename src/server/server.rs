@@ -4,8 +4,8 @@ use crate::config;
 use crate::tunnel::create_tun;
 use crate::AsyncReturn;
 use crate::{
-    common::{self, action},
     server::ippool::IpPool,
+    tunnel::{action, common},
 };
 use log::*;
 use openssl::ssl::{Ssl, SslAcceptor, SslFiletype, SslMethod, SslVerifyMode};

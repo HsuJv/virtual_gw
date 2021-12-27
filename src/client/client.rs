@@ -1,6 +1,6 @@
 use crate::{
-    common::{self, action},
     config,
+    tunnel::{action, common},
 };
 use crate::{tunnel::create_tun, AsyncReturn};
 use log::*;

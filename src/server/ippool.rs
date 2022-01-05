@@ -1,7 +1,6 @@
 use crate::AsyncReturn;
 use log::*;
 use std::sync::{Arc, Mutex};
-use std::vec;
 
 #[derive(PartialEq)]
 enum IpPooMode {
@@ -15,27 +14,57 @@ struct IpPoolInner {
     mode: IpPooMode,
 }
 
+static mut POOL: Option<&IpPool> = None;
+
 pub struct IpPool(Arc<IpPoolInner>);
 
+pub fn init(name: &str, ips: &str) -> AsyncReturn<()> {
+    unsafe {
+        if POOL.is_some() {
+            panic!("Cannot init twice");
+        }
+    }
+    let pool = Box::new(IpPool::new(name, ips)?);
+    unsafe {
+        POOL = Some(Box::leak(pool));
+    }
+    Ok(())
+}
+
+pub fn generate_client_ip() -> AsyncReturn<String> {
+    unsafe {
+        if POOL.is_none() {
+            panic!("Cannot generate ip before init");
+        }
+    }
+    unsafe { POOL.unwrap().get_ip() }
+}
+
+pub fn release_client_ip(ip: &str) -> AsyncReturn<()> {
+    unsafe {
+        if POOL.is_none() {
+            panic!("Cannot release ip before init");
+        }
+    }
+    unsafe { POOL.unwrap().free_ip(ip) }
+}
+
 impl IpPool {
-    pub fn new(name: &str, ips: &str) -> IpPool {
+    pub fn new(name: &str, ips: &str) -> AsyncReturn<IpPool> {
         let ips: Vec<&str> = ips.split('/').collect();
         if ips.len() != 2 {
             let ips = ips.iter().map(|x| x.to_string()).collect::<Vec<String>>();
-            IpPool(Arc::new(IpPoolInner {
+            Ok(IpPool(Arc::new(IpPoolInner {
                 name: name.to_string(),
                 ips: Mutex::new(ips),
                 mode: IpPooMode::Host,
-            }))
+            })))
         } else {
             let (net, mask) = (ips[0], ips[1]);
             let net: Vec<&str> = net.split('.').collect();
             let mask = mask.parse::<u8>().unwrap();
             let dig_net: Vec<u8> = net.iter().map(|x| x.parse::<u8>().unwrap()).collect();
-            let dig_net = (dig_net[0] as u32) << 24
-                | (dig_net[1] as u32) << 16
-                | (dig_net[2] as u32) << 8
-                | (dig_net[3] as u32);
+            let dig_net = u32::from_be_bytes(dig_net.try_into().unwrap());
             // network mask must be less than or equal 30
             // will ensure this while config reading
             let ip_num = (1 << (32 - mask)) as usize;
@@ -43,27 +72,23 @@ impl IpPool {
             let mut ips = Vec::with_capacity(ip_num - 2);
             for i in 1..ip_num - 1 {
                 let ipe = dig_net + i as u32;
-                let ipe = vec![
-                    ipe >> 24,
-                    (ipe & 0x00ff0000) >> 16,
-                    (ipe & 0x0000ff00) >> 8,
-                    (ipe & 0x000000ff),
-                ]
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<String>>()
-                .join(".");
+                let ipe = ipe
+                    .to_be_bytes()
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>()
+                    .join(".");
                 ips.push(ipe);
             }
-            IpPool(Arc::new(IpPoolInner {
+            Ok(IpPool(Arc::new(IpPoolInner {
                 name: name.to_string(),
                 ips: Mutex::new(ips),
                 mode: IpPooMode::Network,
-            }))
+            })))
         }
     }
 
-    pub async fn get_ip(&self) -> AsyncReturn<String> {
+    pub fn get_ip(&self) -> AsyncReturn<String> {
         match self.0.mode {
             IpPooMode::Host => {
                 let ips = self.0.ips.lock().unwrap();
@@ -83,7 +108,7 @@ impl IpPool {
         }
     }
 
-    pub async fn free_ip(&self, ip: &str) -> AsyncReturn<()> {
+    pub fn free_ip(&self, ip: &str) -> AsyncReturn<()> {
         match self.0.mode {
             IpPooMode::Host => {
                 // do nothing
@@ -97,6 +122,7 @@ impl IpPool {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn is_host_mode(&self) -> bool {
         self.0.mode == IpPooMode::Host
     }

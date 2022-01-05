@@ -2,7 +2,7 @@ use crate::AsyncReturn;
 use log::*;
 use tun::AsyncDevice;
 
-async fn create_tun_with_ip(ip: &str) -> AsyncReturn<AsyncDevice> {
+fn create_tun_with_ip(ip: &str) -> AsyncReturn<AsyncDevice> {
     let mut config = tun::Configuration::default();
 
     config
@@ -19,8 +19,8 @@ async fn create_tun_with_ip(ip: &str) -> AsyncReturn<AsyncDevice> {
     Ok(tun::create_as_async(&config).unwrap())
 }
 
-pub async fn create_tun(addr: &str) -> AsyncReturn<AsyncDevice> {
-    let dev = create_tun_with_ip(addr).await?;
+pub fn create_tun(addr: &str) -> AsyncReturn<AsyncDevice> {
+    let dev = create_tun_with_ip(addr)?;
     info!("Crate tun : {}", addr);
     Ok(dev)
 }

@@ -1,4 +1,4 @@
-use futures::{future::FutureExt, pin_mut, select};
+use futures::{executor, future::FutureExt, pin_mut, select};
 use log::*;
 use serde_json::json;
 use tokio::{
@@ -12,7 +12,7 @@ use tun::TunPacket;
 
 use crate::{config, tunnel::action, AsyncReturn};
 
-use super::{ippool, route::Router};
+use super::{ippool, route::RouteMsg};
 
 // the main structure of the session
 #[allow(dead_code)]
@@ -21,17 +21,20 @@ struct SessionInner {
     client_ip: String,
     server_ip: String,
     stream: BufReader<SslStream<TcpStream>>,
-    endpoint: mpsc::Sender<TunPacket>,
-    router: Router,
+    router: mpsc::Sender<RouteMsg>,
 }
 
 impl SessionInner {
-    pub async fn start(&mut self) -> AsyncReturn<()> {
-        let (handle, tun_bridge) = mpsc::channel(100);
-        self.router.add(&self.client_ip, handle);
+    pub async fn start(mut self) -> AsyncReturn<()> {
+        let (addr, tun) = mpsc::channel(100);
+
+        let _ = self
+            .router
+            .send(RouteMsg::AddRoute(self.client_ip.clone(), addr))
+            .await;
 
         self.handle_params().await?;
-        self.main_loop(tun_bridge).await
+        self.main_loop(tun).await
     }
 }
 
@@ -104,12 +107,12 @@ impl SessionInner {
         Ok(())
     }
 
-    async fn main_loop(&mut self, mut tun_bridge: mpsc::Receiver<TunPacket>) -> AsyncReturn<()> {
+    async fn main_loop(&mut self, mut tun: mpsc::Receiver<TunPacket>) -> AsyncReturn<()> {
         let mut ssl_buf = [0u8; 1600];
 
         loop {
             let ssl_rx = self.stream.read(&mut ssl_buf).fuse();
-            let ssl_tx = tun_bridge.recv().fuse();
+            let ssl_tx = tun.recv().fuse();
 
             pin_mut!(ssl_rx, ssl_tx);
             select! {
@@ -119,10 +122,9 @@ impl SessionInner {
                         break;
                     } else {
                         debug!("Recv {:#04x?} from client", n);
-                        self.endpoint
-                            .send(TunPacket::new(ssl_buf[..n].to_vec()))
-                            .await
-                            .unwrap();
+                        let _ = self.router
+                            .send(RouteMsg::Forwarding(TunPacket::new(ssl_buf[..n].to_vec())))
+                            .await;
                     }
                 },
 
@@ -142,14 +144,14 @@ impl Drop for SessionInner {
     fn drop(&mut self) {
         info!("Session {}({}) ends", self.name, self.client_ip);
         ippool::release_client_ip(&self.client_ip).unwrap();
-        self.router.del(&self.client_ip);
+        let _ = executor::block_on(self.router.send(RouteMsg::DelRoute(self.client_ip.clone())));
     }
 }
 
 pub struct Session(SessionInner);
 
 impl Session {
-    pub async fn start(&mut self) -> AsyncReturn<()> {
+    pub async fn start(self) -> AsyncReturn<()> {
         self.0.start().await
     }
 }
@@ -158,8 +160,7 @@ pub struct SessionBuilder {
     name: String,
     server_ip: String,
     stream: Option<BufReader<SslStream<TcpStream>>>,
-    endpoint: Option<mpsc::Sender<TunPacket>>,
-    router: Option<Router>,
+    router: Option<mpsc::Sender<RouteMsg>>,
 }
 
 impl Default for SessionBuilder {
@@ -168,7 +169,6 @@ impl Default for SessionBuilder {
             name: "".to_string(),
             server_ip: "".to_string(),
             stream: None,
-            endpoint: None,
             router: None,
         }
     }
@@ -194,12 +194,7 @@ impl SessionBuilder {
         self
     }
 
-    pub fn endpoint(mut self, endpoint: mpsc::Sender<TunPacket>) -> Self {
-        self.endpoint = Some(endpoint);
-        self
-    }
-
-    pub fn router(mut self, router: Router) -> Self {
+    pub fn router(mut self, router: mpsc::Sender<RouteMsg>) -> Self {
         self.router = Some(router);
         self
     }
@@ -209,7 +204,6 @@ impl SessionBuilder {
         let client_ip = ippool::generate_client_ip().unwrap();
         let server_ip = self.server_ip;
         let stream = self.stream.unwrap_or_else(|| panic!("No stream"));
-        let endpoint = self.endpoint.unwrap_or_else(|| panic!("No endpoint"));
         let router = self.router.unwrap_or_else(|| panic!("No router"));
 
         info!("Client session \"{}\" start", name);
@@ -218,7 +212,6 @@ impl SessionBuilder {
             client_ip,
             server_ip,
             stream,
-            endpoint,
             router,
         })
     }

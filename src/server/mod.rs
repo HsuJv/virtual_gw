@@ -1,8 +1,7 @@
-mod ippool;
 mod route;
 mod session;
 
-use crate::tunnel::create_tun;
+use crate::tunnel::{create_tun, ippool};
 use crate::AsyncReturn;
 use crate::{config, server::session::SessionBuilder};
 use log::*;

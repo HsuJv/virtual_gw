@@ -63,10 +63,11 @@ impl IpPool {
             let (net, mask) = (ips[0], ips[1]);
             let net: Vec<&str> = net.split('.').collect();
             let mask = mask.parse::<u8>().unwrap();
+            if mask > 30 {
+                return Err("Network mask cannot be larger than 30".into());
+            }
             let dig_net: Vec<u8> = net.iter().map(|x| x.parse::<u8>().unwrap()).collect();
             let dig_net = u32::from_be_bytes(dig_net.try_into().unwrap());
-            // network mask must be less than or equal 30
-            // will ensure this while config reading
             let ip_num = (1 << (32 - mask)) as usize;
 
             let mut ips = Vec::with_capacity(ip_num - 2);
@@ -83,6 +84,36 @@ impl IpPool {
             Ok(IpPool(Arc::new(IpPoolInner {
                 name: name.to_string(),
                 ips: Mutex::new(ips),
+                mode: IpPooMode::Network,
+            })))
+        }
+    }
+
+    pub fn test_new(name: &str, ips: &str) -> AsyncReturn<IpPool> {
+        let ips: Vec<&str> = ips.split('/').collect();
+        if ips.len() != 2 {
+            if ips.len() != 1 {
+                return Err("Not a valid network address".into());
+            }
+
+            Ok(IpPool(Arc::new(IpPoolInner {
+                name: name.to_string(),
+                ips: Mutex::new(vec![]),
+                mode: IpPooMode::Host,
+            })))
+        } else {
+            let (net, mask) = (ips[0], ips[1]);
+            let net: Vec<&str> = net.split('.').collect();
+            let mask = mask.parse::<u8>().unwrap();
+            if mask > 30 {
+                return Err("Network mask cannot be larger than 30".into());
+            }
+            let dig_net: Vec<u8> = net.iter().map(|x| x.parse::<u8>().unwrap()).collect();
+            let _dig_net = u32::from_be_bytes(dig_net.try_into().unwrap());
+            let _ip_num = (1 << (32 - mask)) as usize;
+            Ok(IpPool(Arc::new(IpPoolInner {
+                name: name.to_string(),
+                ips: Mutex::new(vec![]),
                 mode: IpPooMode::Network,
             })))
         }
